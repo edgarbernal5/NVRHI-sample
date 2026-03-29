@@ -1,41 +1,29 @@
-# Prerequisites
-*.d
+# Binaries
+Output/Debug_x64
+Output/Debug_x64_tmp
+Output/Release_x64
+Output/Release_x64_tmp
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Nuget
+Code/packages/*.*
 
-# Precompiled Headers
-*.gch
-*.pch
+# Visual Studio files and folder
+.vs/
+**.vcxproj.user
+**.nsight-gfxproj
+**.DotSettings
+**.user
 
-# Linker files
-*.ilk
+# LFS Folders
+lfs/
+hooks/
 
-# Debugger Files
-*.pdb
+# Log files
+**.log
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
+# Dumps
+*.nvdbg
+*.nv-gpudmp
+*gpudmp.json
 
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# debug information files
-*.dwo
+# Exceptions
