@@ -1,29 +1,36 @@
-# Binaries
-Output/Debug_x64
-Output/Debug_x64_tmp
-Output/Release_x64
-Output/Release_x64_tmp
-
-# Nuget
-Code/packages/*.*
-
-# Visual Studio files and folder
+# ========================================
+# Visual Studio / CMake
+# ========================================
 .vs/
-**.vcxproj.user
-**.nsight-gfxproj
-**.DotSettings
-**.user
+out/
+build/
+*.VC.db
+*.suo
+*.user
+CMakeSettings.json
 
-# LFS Folders
-lfs/
-hooks/
+# ========================================
+# Binarios y Compilación
+# ========================================
+*.exe
+*.dll
+*.obj
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.cache
 
-# Log files
-**.log
+# ========================================
+# Dependencias
+# ========================================
+# Si quieres que git ignore futuras descargas manuales de bibliotecas 
+# (aunque los submódulos de git ya los gestionan inteligentemente)
+# /external/nvrhi/thirdparty/
 
-# Dumps
-*.nvdbg
-*.nv-gpudmp
-*gpudmp.json
-
-# Exceptions
+# ========================================
+# Logs y Temporales
+# ========================================
+*.log
+*.tmp
