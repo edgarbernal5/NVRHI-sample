@@ -14,15 +14,15 @@ using namespace Microsoft::WRL;
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_ERASEBKGND:
-        // Le decimos a Windows que nosotros nos encargamos del fondo.
-        // Esto elimina casi todo el lag al arrastrar la ventana.
-        return 1;
+        return 1; // Evita que Windows intente pintar el fondo con GDI (elimina parpadeos)
 
-    case WM_PAINT:
-        // Validamos la ventana para que Windows no se quede atascado
-        // pidiéndonos que la pintemos una y otra vez.
-        ValidateRect(hwnd, NULL);
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd, &ps);
+        // Aquí no hacemos nada porque DX12 se encarga de dibujar
+        EndPaint(hwnd, &ps); // ¡Esto le confirma a Windows que ya terminamos!
         return 0;
+    }
 
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -89,6 +89,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.SampleDesc.Count = 1;
+    swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
     ComPtr<IDXGISwapChain1> swapChain1;
     factory->CreateSwapChainForHwnd(
@@ -100,6 +101,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         &swapChain1
     );
 
+    ComPtr<IDXGISwapChain3> swapChain3;
+    swapChain1.As(&swapChain3);
+    swapChain3->SetMaximumFrameLatency(1);
+    HANDLE frameLatencyWaitEvent = swapChain3->GetFrameLatencyWaitableObject();
     // ---------------------------------------------------------
     // 3. INICIALIZACIÓN DE NVRHI
     // ---------------------------------------------------------
@@ -156,6 +161,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
 
         if (running) {
+            // ¡NUEVO!: Dormir el hilo exactamente hasta que la GPU esté lista
+            WaitForSingleObject(frameLatencyWaitEvent, INFINITE);
             // 1. Obtener el buffer actual
             UINT bufferIndex = swapChain1->GetCurrentBackBufferIndex();
 
@@ -168,8 +175,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             nvrhiDevice->executeCommandList(commandList);
 
             // 4. Presentar el frame
-            //swapChain1->Present(1, 0);
-            swapChain1->Present(0, 0); // El primer '0' desactiva el VSync
+            swapChain1->Present(1, 0);
+            //swapChain1->Present(0, 0); // El primer '0' desactiva el VSync
 
             // 5. ¡LA CLAVE DE LOS FPS!: Limpiar la basura del fotograma
             nvrhiDevice->runGarbageCollection();
