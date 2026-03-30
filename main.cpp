@@ -56,9 +56,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         WS_OVERLAPPEDWINDOW, 100, 100, 800, 600,
         NULL, NULL, wc.hInstance, NULL);
 
-    ShowWindow(hwnd, nCmdShow);
-    UpdateWindow(hwnd);
-
     // ---------------------------------------------------------
     // 2. INICIALIZACIÓN DE DIRECTX 12
     // ---------------------------------------------------------
@@ -144,6 +141,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Crear la lista de comandos (AFUERA DEL BUCLE)
     nvrhi::CommandListHandle commandList = nvrhiDevice->createCommandList();
 
+    ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
+
     // ---------------------------------------------------------
     // 4. BUCLE DE MENSAJES (MAIN LOOP)
     // ---------------------------------------------------------
@@ -164,7 +164,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             // ¡NUEVO!: Dormir el hilo exactamente hasta que la GPU esté lista
             WaitForSingleObject(frameLatencyWaitEvent, INFINITE);
             // 1. Obtener el buffer actual
-            UINT bufferIndex = swapChain1->GetCurrentBackBufferIndex();
+            UINT bufferIndex = swapChain3->GetCurrentBackBufferIndex();
 
             // 2. Abrir comandos y pintar la pantalla
             commandList->open();
@@ -182,13 +182,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             nvrhiDevice->runGarbageCollection();
         }
     }
+    if (nvrhiDevice && commandList)
+    {
+        // 1. Enviamos un comando vacío a la GPU. 
+        // Esto obliga a NVRHI a colocar una nueva valla en la cola de comandos 
+        // que estará garantizadamente DESPUÉS de nuestro último swapChain1->Present().
+        commandList->open();
+        commandList->close();
+        nvrhiDevice->executeCommandList(commandList);
 
+        // 2. Ahora sí, esperamos a que la GPU cruce esta última valla.
+        nvrhiDevice->waitForIdle();
+    }
     // ---------------------------------------------------------
     // 5. LIMPIEZA
     // ---------------------------------------------------------
     swapChainTextures.clear(); // Liberar handles de texturas primero
     commandList = nullptr;     // Liberar comandos
-    nvrhiDevice = nullptr;     // Liberar dispositivo
+    if (nvrhiDevice) {
+        nvrhiDevice->runGarbageCollection();
+        nvrhiDevice = nullptr;
+    }
 
     DestroyWindow(hwnd);
     UnregisterClassW(className, wc.hInstance);
