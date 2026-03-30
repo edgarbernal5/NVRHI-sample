@@ -3,6 +3,7 @@
 #include <directx/d3d12.h>
 #include <dxgi1_4.h>
 #include <iostream>
+#include <vector> // Necesario para guardar los handles de NVRHI
 
 #include <nvrhi/nvrhi.h>
 #include <nvrhi/d3d12.h>
@@ -12,9 +13,20 @@ using namespace Microsoft::WRL;
 // Función de devolución de llamada para mensajes de Win32
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+    case WM_ERASEBKGND:
+        // Le decimos a Windows que nosotros nos encargamos del fondo.
+        // Esto elimina casi todo el lag al arrastrar la ventana.
+        return 1;
+
+    case WM_PAINT:
+        // Validamos la ventana para que Windows no se quede atascado
+        // pidiéndonos que la pintemos una y otra vez.
+        ValidateRect(hwnd, NULL);
+        return 0;
+
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
@@ -40,39 +52,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     WNDCLASSEXW wc = { sizeof(WNDCLASSEXW), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, className, NULL };
     RegisterClassExW(&wc);
 
-    HWND hwnd = CreateWindowExW(0, className, L"NVRHI + DX12 + Win32", 
-                                WS_OVERLAPPEDWINDOW, 100, 100, 800, 600, 
-                                NULL, NULL, wc.hInstance, NULL);
-    
+    HWND hwnd = CreateWindowExW(0, className, L"NVRHI + DX12 + Win32",
+        WS_OVERLAPPEDWINDOW, 100, 100, 800, 600,
+        NULL, NULL, wc.hInstance, NULL);
+
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
     // ---------------------------------------------------------
     // 2. INICIALIZACIÓN DE DIRECTX 12
     // ---------------------------------------------------------
-    
-    // Habilitar la capa de depuración de DX12 (Recomendado en desarrollo)
+
+    // Habilitar la capa de depuración de DX12
     ComPtr<ID3D12Debug> debugController;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
         debugController->EnableDebugLayer();
     }
 
-    // Crear DXGI Factory
     ComPtr<IDXGIFactory4> factory;
     CreateDXGIFactory1(IID_PPV_ARGS(&factory));
 
-    // Crear D3D12 Device
     ComPtr<ID3D12Device> device;
     D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device));
 
-    // Crear Command Queue (NVRHI lo necesita)
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     ComPtr<ID3D12CommandQueue> commandQueue;
     device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
 
-    // Crear Swap Chain
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
     swapChainDesc.BufferCount = 2; // Double buffering
     swapChainDesc.Width = 800;
@@ -84,7 +92,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ComPtr<IDXGISwapChain1> swapChain1;
     factory->CreateSwapChainForHwnd(
-        commandQueue.Get(), // El swap chain necesita el queue en DX12
+        commandQueue.Get(),
         hwnd,
         &swapChainDesc,
         nullptr,
@@ -100,7 +108,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     nvrhiDesc.pDevice = device.Get();
     nvrhiDesc.pGraphicsCommandQueue = commandQueue.Get();
 
-    // Crear la instancia principal de NVRHI
     nvrhi::DeviceHandle nvrhiDevice = nvrhi::d3d12::createDevice(nvrhiDesc);
 
     if (!nvrhiDevice) {
@@ -108,11 +115,37 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return -1;
     }
 
+    // --- ¡NUEVO!: CONECTAR SWAPCHAIN CON NVRHI ---
+    const int numBackBuffers = 2;
+    std::vector<nvrhi::TextureHandle> swapChainTextures(numBackBuffers);
+
+    for (int i = 0; i < numBackBuffers; ++i) {
+        ComPtr<ID3D12Resource> backBuffer;
+        swapChain1->GetBuffer(i, IID_PPV_ARGS(&backBuffer));
+
+        nvrhi::TextureDesc textureDesc;
+        textureDesc.width = 800;
+        textureDesc.height = 600;
+        textureDesc.format = nvrhi::Format::RGBA8_UNORM;
+        textureDesc.isRenderTarget = true;
+        textureDesc.initialState = nvrhi::ResourceStates::Present;
+        textureDesc.keepInitialState = true;
+        textureDesc.debugName = "SwapChainBuffer";
+
+        swapChainTextures[i] = nvrhiDevice->createHandleForNativeTexture(
+            nvrhi::ObjectTypes::D3D12_Resource, nvrhi::Object(backBuffer.Get()), textureDesc);
+    }
+
+    // Crear la lista de comandos (AFUERA DEL BUCLE)
+    nvrhi::CommandListHandle commandList = nvrhiDevice->createCommandList();
+
     // ---------------------------------------------------------
     // 4. BUCLE DE MENSAJES (MAIN LOOP)
     // ---------------------------------------------------------
     MSG msg = {};
     bool running = true;
+    nvrhi::Color clearColor(0.2f, 0.3f, 0.6f, 1.0f); // Azul oscuro
+
     while (running) {
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
@@ -123,17 +156,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
 
         if (running) {
-            // Aquí irá el código de renderizado (ClearScreen, Draw, etc.)
-            
-            // Presentar el frame
-            swapChain1->Present(1, 0);
+            // 1. Obtener el buffer actual
+            UINT bufferIndex = swapChain1->GetCurrentBackBufferIndex();
+
+            // 2. Abrir comandos y pintar la pantalla
+            commandList->open();
+            commandList->clearTextureFloat(swapChainTextures[bufferIndex], nvrhi::AllSubresources, clearColor);
+            commandList->close();
+
+            // 3. Ejecutar comandos en la GPU
+            nvrhiDevice->executeCommandList(commandList);
+
+            // 4. Presentar el frame
+            //swapChain1->Present(1, 0);
+            swapChain1->Present(0, 0); // El primer '0' desactiva el VSync
+
+            // 5. ¡LA CLAVE DE LOS FPS!: Limpiar la basura del fotograma
+            nvrhiDevice->runGarbageCollection();
         }
     }
 
     // ---------------------------------------------------------
     // 5. LIMPIEZA
     // ---------------------------------------------------------
-    nvrhiDevice = nullptr; // Se libera automáticamente
+    swapChainTextures.clear(); // Liberar handles de texturas primero
+    commandList = nullptr;     // Liberar comandos
+    nvrhiDevice = nullptr;     // Liberar dispositivo
+
     DestroyWindow(hwnd);
     UnregisterClassW(className, wc.hInstance);
 
