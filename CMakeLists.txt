@@ -15,10 +15,11 @@ add_subdirectory(external/nvrhi)
 # Crear el ejecutable
 add_executable(HelloWorld WIN32 main.cpp) # WIN32 oculta la consola por defecto
 
-# Vincular NVRHI y las bibliotecas de DirectX/Windows
+# Vincular NVRHI, sus backends y las bibliotecas de DirectX/Windows
 target_link_libraries(HelloWorld PRIVATE 
     nvrhi
-    DirectX-Headers   # <--- AÑADE ESTA LÍNEA AQUÍ
+    nvrhi_d3d12
+    DirectX-Headers
     d3d12.lib
     dxgi.lib
     d3dcompiler.lib
